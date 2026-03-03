@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Rapport — Registro de Horas Semanales | Seidor</title>
+  <meta name="description"
+    content="Herramienta de registro automático de horas semanales en el Rapport de Seidor Intranet." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+
+<body>
+  <!-- Background glows -->
+  <div class="bg-glow bg-glow-1"></div>
+  <div class="bg-glow bg-glow-2"></div>
+
+  <div class="app-shell">
+
+    <!-- ── SIDEBAR ─────────────────────────────────────── -->
+    <aside class="sidebar">
+      <div class="sidebar-logo">
+        <div class="logo-icon">⏱</div>
+        <div class="logo-text">
+          <span class="logo-title">Rapport</span>
+          <span class="logo-sub">Seidor Intranet</span>
+        </div>
+      </div>
+
+      <nav class="sidebar-nav">
+        <a class="nav-item active" href="#register">
+          <span class="nav-icon">📋</span>
+          <span>Registrar Horas</span>
+        </a>
+        <a class="nav-item" href="#logs">
+          <span class="nav-icon">📁</span>
+          <span>Historial</span>
+        </a>
+      </nav>
+
+      <!-- Scheduler status widget -->
+      <div class="scheduler-card">
+        <div class="scheduler-header">
+          <span class="scheduler-dot" id="schedulerDot"></span>
+          <span class="scheduler-label">Scheduler Activo</span>
+        </div>
+        <p class="scheduler-next">Próxima ejecución automática:</p>
+        <p class="scheduler-time">{{ next_run }}</p>
+        <p class="scheduler-note">Cada viernes a las 20:00 hora Perú</p>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="status-pill" id="statusPill">
+          <span class="status-dot idle" id="statusDot"></span>
+          <span id="statusText">Listo</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ── MAIN CONTENT ────────────────────────────────── -->
+    <main class="main-content">
+
+      <!-- ── HEADER ──────────────────────────────────── -->
+      <header class="page-header">
+        <div class="header-main">
+          <h1 class="page-title">Registro de Horas Semanales</h1>
+          <p class="page-subtitle">Automatiza el registro en el Rapport de la intranet Seidor</p>
+        </div>
+
+        <div class="week-selector-nav">
+          <a href="/?week_offset={{ week_offset - 1 }}" class="btn-nav" title="Semana anterior">◀</a>
+          <div class="week-indicator">
+            <span class="week-label">Semana {{ week_number }}</span>
+            <span class="week-status">{% if this_week %}Actual{% else %}Offset {{ week_offset }}{% endif %}</span>
+          </div>
+          <a href="/?week_offset={{ week_offset + 1 }}" class="btn-nav" title="Siguiente semana">▶</a>
+        </div>
+
+        <div class="header-badge">
+          <span>🇵🇪</span>
+          <span id="peruvianClock">--:--:--</span>
+          <span class="badge-label">PET</span>
+        </div>
+      </header>
+
+      <!-- ── FORM SECTION ───────────────────────────── -->
+      <section id="register">
+        <form id="rapportForm" autocomplete="off" data-week="{{ week_number }}">
+
+          <!-- Credentials card -->
+          <div class="card mb-4" id="credentialsCard">
+            <div class="card-header">
+              <div class="card-icon">🔐</div>
+              <div>
+                <h2 class="card-title">Credenciales</h2>
+                <p class="card-desc">Ingresa tu usuario y contraseña de Seidor Intranet</p>
+              </div>
+            </div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="username" class="form-label">Usuario</label>
+                <div class="input-wrapper">
+                  <span class="input-icon">👤</span>
+                  <input type="text" id="username" name="username" class="form-input" value="{{ username }}"
+                    placeholder="Tu usuario de Seidor" autocomplete="username" required />
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="password" class="form-label">Contraseña</label>
+                <div class="input-wrapper">
+                  <span class="input-icon">🔑</span>
+                  <input type="password" id="password" name="password" class="form-input" placeholder="••••••••••••"
+                    autocomplete="current-password" required />
+                  <button type="button" class="toggle-pass" id="togglePass" title="Mostrar/ocultar contraseña">
+                    <svg id="eyeIcon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+                      fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Week selector card -->
+          <div class="card mb-4" id="weekCard">
+            <div class="card-header">
+              <div class="card-icon">📅</div>
+              <div>
+                <h2 class="card-title">Semana {{ week_number }}</h2>
+                <p class="card-desc">Selecciona los días para reportar. Puedes navegar entre semanas arriba.</p>
+              </div>
+            </div>
+
+            <!-- Day pills -->
+            <div class="days-grid">
+              {% for day in days %}
+              <label class="day-pill {% if day.is_weekend %}weekend{% endif %} {% if day.checked %}checked{% endif %}"
+                for="day_{{ day.iso }}">
+                <input type="checkbox" id="day_{{ day.iso }}" name="dates" value="{{ day.iso }}" {% if day.checked
+                  %}checked{% endif %} class="day-checkbox" />
+                <span class="day-name">{{ day.label }}</span>
+                <span class="day-date">{{ day.display }}</span>
+                <span class="day-check">✔</span>
+              </label>
+              {% endfor %}
+            </div>
+
+            <!-- Hours selector -->
+            <div class="hours-row">
+              <div class="hours-selector-group">
+                <label class="form-label" for="hours">Horas diarias:</label>
+                <div class="hours-control">
+                  <button type="button" class="hours-btn" id="hoursDown">−</button>
+                  <input type="number" id="hours" name="hours" class="hours-input" value="8" min="1" max="12"
+                    readonly />
+                  <button type="button" class="hours-btn" id="hoursUp">+</button>
+                </div>
+                <span class="hours-label">h / día</span>
+              </div>
+
+              <div class="export-option">
+                <label class="toggle-switch">
+                  <input type="checkbox" id="exportCheck" checked>
+                  <span class="toggle-slider"></span>
+                </label>
+                <span class="export-label">Exportar Excel y enviar correo</span>
+              </div>
+
+              <div class="hours-total" id="hoursTotal">Total semana: <strong>40h</strong></div>
+            </div>
+          </div>
+
+          <!-- Submit button -->
+          <div class="actions-row mt-6">
+            <button type="submit" class="btn-primary" id="submitBtn">
+              <span class="btn-icon" id="btnIcon">▶</span>
+              <span id="btnText">Registrar Horas</span>
+            </button>
+            <button type="button" class="btn-secondary" id="clearLogsBtn">
+              🗑 Limpiar Consola
+            </button>
+          </div>
+
+        </form>
+      </section>
+
+      <!-- ── LOG CONSOLE ───────────────────────────── -->
+      <section id="logs" class="card console-card">
+        <div class="card-header">
+          <div class="card-icon">⚡</div>
+          <div>
+            <h2 class="card-title">Consola de Actividad</h2>
+            <p class="card-desc">Registro en tiempo real de las operaciones</p>
+          </div>
+          <div class="console-badges">
+            <span class="badge badge-live" id="liveBadge">● EN VIVO</span>
+          </div>
+        </div>
+        <div class="console-body" id="consoleBody">
+          <div class="console-welcome">
+            <pre class="console-art">
+  ____                            _
+ |  _ \ __ _ _ __  _ __  ___  __| |_
+ | |_) / _` | '_ \| '_ \/ _ \/ _` \ \
+ |  _ &lt; (_| | |_) | |_) | (_) | (_| |\ \
+ |_| \_\__,_| .__/| .__/ \___/ \__,_| \_\
+            |_|   |_|   Hours Tool v1.0
+            </pre>
+            <p class="console-hint">Sistema listo. Completa el formulario y pulsa <strong>Registrar Horas</strong>.</p>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ── TOAST NOTIFICATIONS ──────────────────────── -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="/static/app.js"></script>
+</body>
+
+</html>
