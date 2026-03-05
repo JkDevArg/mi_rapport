@@ -26,11 +26,14 @@ jobs:
       - name: Ejecutar registro
         env:
           # Estas variables las configuraremos en GitHub Secrets
-          USERNAME: ${{ secrets.RAPPORT_USER }}
-          PASSWORD: ${{ secrets.RAPPORT_PASS }}
-          EMAIL_USER: ${{ secrets.EMAIL_USER }}
-          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+          NAME: ${{ secrets.NAME }}
+          USERNAME: ${{ secrets.USERNAME }}
+          PASSWORD: ${{ secrets.PASSWORD }}
+          EMAIL_ADDRESS_SENDER: ${{ secrets.EMAIL_ADDRESS_SENDER }}
           EMAIL_ADDRESS_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
+          PERNR: ${{ secrets.PERNR }}
+          POSID: ${{ secrets.POSID }}
+          DESCR: ${{ secrets.DESCR }}
           PYTHONPATH: ./app
         run: |
           # Ejecutamos solo la función de registro sin levantar el servidor web
@@ -47,11 +50,15 @@ jobs:
           
           print(f'Iniciando registro para la semana del {monday}')
           _run_registration_bg(
-              os.getenv('USERNAME'), 
-              os.getenv('PASSWORD'), 
-              dates, 
-              8, 
+              name=os.getenv('NAME'),
+              username=os.getenv('USERNAME'), 
+              password=os.getenv('PASSWORD'), 
+              dates=dates, 
+              hours=8, 
               should_export=True, 
-              week_number=str(today.isocalendar()[1])
+              week_number=str(today.isocalendar()[1]),
+              pernr=os.getenv('PERNR'),
+              posid=os.getenv('POSID'),
+              descr=os.getenv('DESCR')
           )
           "

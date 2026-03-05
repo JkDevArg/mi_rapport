@@ -118,6 +118,11 @@ def api_register():
     should_export = data.get("export", False)
     week_number = data.get("week_number", "N/A")
 
+    name = (data.get("name") or os.getenv("NAME", "")).strip()
+    pernr = (data.get("pernr") or os.getenv("PERNR", "")).strip()
+    posid = (data.get("posid") or os.getenv("POSID", "")).strip()
+    descr = (data.get("descr") or os.getenv("DESCR", "")).strip()
+
     if not username or not password:
         return jsonify({"ok": False, "error": "Usuario y contraseña son obligatorios."}), 400
     if not selected_dates:
@@ -132,7 +137,7 @@ def api_register():
 
     thread = threading.Thread(
         target=_run_registration_bg,
-        args=(username, password, sorted(dates), hours, should_export, week_number),
+        args=(name, username, password, sorted(dates), hours, should_export, week_number, pernr, posid, descr),
         daemon=True,
     )
     thread.start()
@@ -185,13 +190,23 @@ def api_logs():
 
 # ── Registration logic ─────────────────────────────────────────────────────
 
-def _run_registration_bg(username: str, password: str, dates: list, hours: int, should_export: bool = False, week_number: str = "N/A"):
+def _run_registration_bg(name: str, username: str, password: str, dates: list, hours: int, 
+                         should_export: bool = False, week_number: str = "N/A", 
+                         pernr: str = None, posid: str = None, descr: str = None):
     """Run hour registration in a background thread, streaming progress via SSE."""
     global _is_running
     with _running_lock:
-        client = RapportClient(username=username, password=password, headless=True)
+        client = RapportClient(
+            username=username, 
+            password=password, 
+            headless=True,
+            pernr=pernr,
+            posid=posid,
+            descr=descr
+        )
         try:
-            push_log(f"🔐 Autenticando como {username}...", "info")
+            display_name = name or username
+            push_log(f"🔐 Autenticando como {display_name}...", "info")
             client.login()
             push_log("✔ Login exitoso.", "success")
 
@@ -209,7 +224,7 @@ def _run_registration_bg(username: str, password: str, dates: list, hours: int, 
 
             if success_count > 0 and should_export:
                 push_log(f"📊 Generando Excel para la semana {week_number}...", "info")
-                excel_file, total_h = generate_excel(registered_dates, hours)
+                excel_file, total_h = generate_excel(registered_dates, hours, description=descr)
                 push_log(f"📧 Enviando correo con el reporte ({total_h}h)...", "info")
                 email_ok = send_email(excel_file, total_h, week_number)
                 email = os.getenv("EMAIL_ADDRESS_RECIPIENT", "[EMAIL_ADDRESS]")
@@ -231,8 +246,14 @@ def _run_registration_bg(username: str, password: str, dates: list, hours: int, 
 def _auto_register():
     """Triggered automatically by the scheduler every Friday 20:00 PET."""
     push_log("⚡ Ejecución automática del scheduler (viernes 20:00 PET).", "warn")
+    name = os.getenv("NAME", "").strip()
     username = os.getenv("USERNAME", "").strip()
     password = os.getenv("PASSWORD", "").strip()
+    pernr = os.getenv("PERNR", "").strip()
+    posid = os.getenv("POSID", "").strip()
+    descr = os.getenv("DESCR", "").strip()
+    should_export = True # Default for auto-runs usually
+
     if not username or not password:
         push_log("✖ No hay credenciales en .env para la ejecución automática.", "error")
         return
@@ -240,7 +261,20 @@ def _auto_register():
     today = datetime.date.today()
     monday = today - datetime.timedelta(days=today.weekday())
     dates = [(monday + datetime.timedelta(days=i)) for i in range(5)]  # Mon–Fri
-    _run_registration_bg(username, password, dates, 8)
+    week_number = str(today.isocalendar()[1])
+    
+    _run_registration_bg(
+        name=name, 
+        username=username, 
+        password=password, 
+        dates=dates, 
+        hours=8, 
+        should_export=should_export, 
+        week_number=week_number,
+        pernr=pernr,
+        posid=posid,
+        descr=descr
+    )
 
 
 def _next_friday_8pm() -> datetime.datetime:

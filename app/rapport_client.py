@@ -18,13 +18,9 @@ BASE_URL = "https://intranet.seidor.es"
 LOGIN_URL = f"{BASE_URL}/sap/bc/ui2/flp#ZRAPPORTS_ENTRADA-display&/CopiarDias"
 ODATA_URL = f"{BASE_URL}/sap/opu/odata/sap/ZSRV_RAPP_SRV/Z_SAVE_RAP_HSet"
 
-# Fixed payload fields (from README)
-PERNR = os.getenv("PERNR", "65001734")
-POSID = os.getenv("POSID", "X19-80_CIESUR-OUT_003")
-DESCR = os.getenv(
-    "DESCR",
-    "Desarrollo y análisis de migración en diferentes proyectos, pivoteo con otros clientes.",
-)
+# Fixed payload fields (now handled in RapportClient)
+# Constants removed in favor of instance variables
+
 
 
 def _hours_to_sap_duration(hours: int) -> str:
@@ -40,10 +36,15 @@ class RapportClient:
     3. Send POST requests to register hours via OData
     """
 
-    def __init__(self, username: str, password: str, headless: bool = True):
+    def __init__(self, username: str, password: str, headless: bool = True, pernr: str = None, posid: str = None, descr: str = None):
         self.username = username
         self.password = password
         self.headless = headless
+        
+        # Use provided values or fall back to env or defaults
+        self.pernr = pernr or os.getenv("PERNR", "65001734")
+        self.posid = posid or os.getenv("POSID", "X19-80_CIESUR-OUT_003")
+        self.descr = descr or os.getenv("DESCR", "Desarrollo y análisis de migración en diferentes proyectos, pivoteo con otros clientes.")
 
         self._playwright = None
         self._browser = None
@@ -128,16 +129,16 @@ class RapportClient:
 
         payload = {
             "IDatum": date_str,
-            "IPernr": PERNR,
+            "IPernr": self.pernr,
             "ICopy": " ",
             "Z_SAVE_RAP_R": [],
             "Z_SAVE_RAP_P": [
                 {
-                    "Pernr": PERNR,
+                    "Pernr": self.pernr,
                     "Usr": "",
                     "Datai1": date_str,
                     "Pos": "",
-                    "Posid": POSID,
+                    "Posid": self.posid,
                     "Refint": "",
                     "Subp": "",
                     "Tare": "",
@@ -147,7 +148,7 @@ class RapportClient:
                     "Desp": "T",
                     "Situacion": "",
                     "Dura": duration,
-                    "Descr": DESCR,
+                    "Descr": self.descr,
                     "Tip": "ZI",
                     "Luga": "",
                     "Emp": "",

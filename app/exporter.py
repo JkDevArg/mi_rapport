@@ -10,7 +10,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def generate_excel(dates, hours_per_day, filename="/tmp/rapport_export.xlsx"):
+def generate_excel(dates, hours_per_day, filename="/tmp/rapport_export.xlsx", description="Desarrollo y análisis de migración"):
     """
     Generates an Excel file with the registered hours.
     """
@@ -33,7 +33,7 @@ def generate_excel(dates, hours_per_day, filename="/tmp/rapport_export.xlsx"):
     for date_str in sorted(dates):
         date_obj = datetime.fromisoformat(date_str)
         day_name = day_names[date_obj.weekday()]
-        ws.append([date_obj.strftime("%Y-%m-%d"), day_name, hours_per_day, "Desarrollo y análisis de migración"])
+        ws.append([date_obj.strftime("%Y-%m-%d"), day_name, hours_per_day, description])
         total_hours += hours_per_day
 
     ws.append([])
