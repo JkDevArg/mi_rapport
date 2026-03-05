@@ -20,15 +20,17 @@ from rapport_client import RapportClient
 from scheduler import RapportScheduler
 
 # ── Setup ──────────────────────────────────────────────────────────────────
-load_dotenv("/app/.env")
-os.makedirs("/app/logs", exist_ok=True)
+load_dotenv() # Carga .env local o variables de entorno del sistema
+LOGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs")
+os.makedirs(LOGS_DIR, exist_ok=True)
+log_file = os.path.join(LOGS_DIR, "rapport.log")
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler("/app/logs/rapport.log", encoding="utf-8"),
+        logging.FileHandler(log_file, encoding="utf-8"),
     ],
 )
 logger = logging.getLogger(__name__)
@@ -174,10 +176,9 @@ def api_status():
 @app.route("/api/logs")
 def api_logs():
     """Return the last N lines of the log file."""
-    log_path = "/app/logs/rapport.log"
     lines = []
-    if os.path.exists(log_path):
-        with open(log_path, encoding="utf-8") as f:
+    if os.path.exists(log_file):
+        with open(log_file, encoding="utf-8") as f:
             lines = f.readlines()[-100:]
     return jsonify({"lines": [l.rstrip() for l in lines]})
 
@@ -251,14 +252,13 @@ def _next_friday_8pm() -> datetime.datetime:
     return nf.replace(hour=20, minute=0, second=0, microsecond=0)
 
 
-# ── Scheduler ──────────────────────────────────────────────────────────────
-scheduler = RapportScheduler(callback=_auto_register)
-scheduler.start()
-push_log("🕐 Scheduler iniciado — se ejecutará cada viernes a las 20:00 PET.", "info")
-
-
 # ── Entry point ────────────────────────────────────────────────────────────
 if __name__ == "__main__":
+    # Iniciar scheduler solo cuando se corre el servidor web
+    scheduler = RapportScheduler(callback=_auto_register)
+    scheduler.start()
+    push_log("🕐 Scheduler iniciado — se ejecutará cada viernes a las 20:00 PET.", "info")
+
     port = int(os.getenv("PORT", 8080))
     logger.info(f"Starting Rapport web server on http://0.0.0.0:{port}")
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True)

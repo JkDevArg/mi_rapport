@@ -1,0 +1,57 @@
+name: Registro Automático de Rapport
+
+on:
+  schedule:
+    # Se ejecuta todos los viernes a las 20:00 PET (01:00 UTC del sábado)
+    - cron: '0 1 * * 6'
+  workflow_dispatch: # Esto te permite ejecutarlo manualmente desde GitHub si quieres
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependencias
+        run: |
+          pip install -r app/requirements.txt
+          npx playwright install --with-deps chromium
+
+      - name: Ejecutar registro
+        env:
+          # Estas variables las configuraremos en GitHub Secrets
+          USERNAME: ${{ secrets.RAPPORT_USER }}
+          PASSWORD: ${{ secrets.RAPPORT_PASS }}
+          EMAIL_USER: ${{ secrets.EMAIL_USER }}
+          EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
+          EMAIL_ADDRESS_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
+          PYTHONPATH: ./app
+        run: |
+          # Ejecutamos solo la función de registro sin levantar el servidor web
+          python -c "
+          import os, datetime
+          from main import _run_registration_bg
+          
+          # Calculamos los días de la semana actual (Lunes a Viernes)
+          today = datetime.date.today()
+          # Si corre el sábado a la 1 am UTC, 'today' es sábado. 
+          # Retrocedemos al lunes de esa semana que acaba de pasar.
+          monday = today - datetime.timedelta(days=today.weekday())
+          dates = [(monday + datetime.timedelta(days=i)) for i in range(5)]
+          
+          print(f'Iniciando registro para la semana del {monday}')
+          _run_registration_bg(
+              os.getenv('USERNAME'), 
+              os.getenv('PASSWORD'), 
+              dates, 
+              8, 
+              should_export=True, 
+              week_number=str(today.isocalendar()[1])
+          )
+          "
