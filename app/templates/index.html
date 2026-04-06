@@ -165,12 +165,22 @@
                 <span class="hours-label">h / día</span>
               </div>
 
-              <div class="export-option">
-                <label class="toggle-switch">
-                  <input type="checkbox" id="exportCheck" checked>
-                  <span class="toggle-slider"></span>
-                </label>
-                <span class="export-label">Exportar Excel y enviar correo</span>
+              <div class="export-options-group">
+                <div class="export-option">
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="exportCheck" checked>
+                    <span class="toggle-slider"></span>
+                  </label>
+                  <span class="export-label">Generar Reporte Excel</span>
+                </div>
+
+                <div class="export-option" id="emailOption" style="margin-left: 20px;">
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="sendEmailCheck" checked>
+                    <span class="toggle-slider"></span>
+                  </label>
+                  <span class="export-label">Enviar por Correo</span>
+                </div>
               </div>
 
               <div class="hours-total" id="hoursTotal">Total semana: <strong>40h</strong></div>
@@ -294,7 +304,7 @@
  | |_) / _` | '_ \| '_ \/ _ \/ _` \ \
  |  _ &lt; (_| | |_) | |_) | (_) | (_| |\ \
  |_| \_\__,_| .__/| .__/ \___/ \__,_| \_\
-            |_|   |_|   Hours Tool v1.0
+            |_|   |_|   Hours Tool v2.0
             </pre>
             <p class="console-hint">Sistema listo. Completa el formulario y pulsa <strong>Registrar Horas</strong>.</p>
           </div>

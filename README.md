@@ -110,5 +110,26 @@ NAME=Tu Nombre Completo
 
 ---
 
+## 📈 Historial de Versiones
+
+### v2.0 (Versión Actual)
+- **Mejoras en Reportes**: 
+  - Personalización de Excel con cabecera corporativa (colores, nombre y semana combinados).
+  - Adición de la columna de **Proyecto** en el reporte.
+  - Ajuste automático de anchos de columna para mejor legibilidad.
+- **Flujo de Trabajo**:
+  - Separación de la opción "Generar Reporte" de "Enviar por Correo".
+  - Implementación de **descarga directa** desde la consola web mediante una nueva ruta de API.
+- **Estabilidad**:
+  - Corrección de error crítico (TypeError) en el streaming de logs.
+  - Optimización de la caché de sesión.
+
+### v1.0
+- Versión inicial con registro automatizado vía Playwright y OData API.
+- Interfaz web básica con navegación de semanas.
+- Funcionalidad de exportación y envío de correo unificada.
+
+---
+
 > [!IMPORTANT]
 > Esta herramienta debe ser utilizada de acuerdo con las políticas de la empresa. Las credenciales deben ser protegidas y nunca subidas al repositorio de código.

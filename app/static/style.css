@@ -1369,4 +1369,29 @@ input:checked+.toggle-slider:before {
   border-color: var(--error) !important;
   box-shadow: 0 0 0 3px var(--error-glow) !important;
   background: rgba(244, 63, 94, 0.05) !important;
-}
+}
+
+.export-options-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.log-download {
+  margin-top: 8px;
+  padding: 10px 14px;
+  background: rgba(16, 217, 160, 0.1);
+  border-radius: var(--radius-sm);
+  border-left: 4px solid var(--success);
+}
+
+.download-link {
+  color: var(--success);
+  text-decoration: none;
+  font-weight: 700;
+  cursor: pointer;
+  background: rgba(16, 217, 160, 0.15);
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--success);
+}

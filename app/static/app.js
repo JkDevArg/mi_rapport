@@ -16,6 +16,18 @@ const useDailyDesc = document.getElementById('useDailyDesc');
 const dailyDescFields = document.getElementById('dailyDescFields');
 const defaultDescRow = document.getElementById('defaultDescRow');
 
+const exportCheck = document.getElementById('exportCheck');
+const sendEmailCheck = document.getElementById('sendEmailCheck');
+const emailOption = document.getElementById('emailOption');
+
+if (exportCheck && sendEmailCheck) {
+  exportCheck.addEventListener('change', () => {
+    sendEmailCheck.disabled = !exportCheck.checked;
+    emailOption.style.opacity = exportCheck.checked ? '1' : '0.5';
+    if (!exportCheck.checked) sendEmailCheck.checked = false;
+  });
+}
+
 // ── Peruvian Clock ──────────────────────────────────
 // ... (omitted for brevity in replace call, but I'll write the whole function below)
 function updateClock() {
@@ -91,10 +103,22 @@ function appendLog(ts, msg, level) {
   const welcome = consoleBody.querySelector('.console-welcome');
   if (welcome) welcome.remove();
 
-  const line = document.createElement('div');
-  line.className = `log-line log-${level}`;
-  line.innerHTML = `<span class="log-ts">[${ts}]</span><span class="log-msg">${escapeHtml(msg)}</span>`;
-  consoleBody.appendChild(line);
+  if (level === 'system' && msg.startsWith('LINK_DOWNLOAD:')) {
+    const filename = msg.split(':')[1];
+    const linkLine = document.createElement('div');
+    linkLine.className = 'log-line log-success log-download';
+    linkLine.innerHTML = `
+      <span class="log-ts">[SISTEMA]</span>
+      <span class="log-msg">📥 Reporte listo: </span>
+      <a href="/api/download/${filename}" class="download-link" download>Descargar Excel</a>
+    `;
+    consoleBody.appendChild(linkLine);
+  } else {
+    const line = document.createElement('div');
+    line.className = `log-line log-${level}`;
+    line.innerHTML = `<span class="log-ts">[${ts}]</span><span class="log-msg">${escapeHtml(msg)}</span>`;
+    consoleBody.appendChild(line);
+  }
   consoleBody.scrollTop = consoleBody.scrollHeight;
 }
 
@@ -195,6 +219,7 @@ form.addEventListener('submit', async (e) => {
   const project = document.getElementById('project').value.trim();
   const description = document.getElementById('description').value.trim();
   const exportFlag = document.getElementById('exportCheck').checked;
+  const sendEmailFlag = document.getElementById('sendEmailCheck').checked;
   const weekNum = form.getAttribute('data-week');
 
   const dailyDescriptions = {};
@@ -226,6 +251,7 @@ form.addEventListener('submit', async (e) => {
       dates, 
       hours, 
       export: exportFlag, 
+      send_email: sendEmailFlag,
       posid: useDefaultProject.checked ? null : project, 
       descr: useDefaultDesc.checked ? null : description, 
       daily_descriptions: useDailyDesc.checked ? dailyDescriptions : null,

@@ -116,6 +116,7 @@ def api_register():
     selected_dates = data.get("dates", [])
     hours = int(data.get("hours", 8))
     should_export = data.get("export", False)
+    should_send_email = data.get("send_email", False)
     week_number = data.get("week_number", "N/A")
 
     name = (data.get("name") or os.getenv("NAME", "")).strip()
@@ -138,7 +139,7 @@ def api_register():
 
     thread = threading.Thread(
         target=_run_registration_bg,
-        args=(name, username, password, sorted(dates), hours, should_export, week_number, pernr, posid, descr, daily_descriptions),
+        args=(name, username, password, sorted(dates), hours, should_export, should_send_email, week_number, pernr, posid, descr, daily_descriptions),
         daemon=True,
     )
     thread.start()
@@ -146,12 +147,31 @@ def api_register():
 
 
 @app.route("/api/stream")
-# ... (omitted stream)
+def api_stream():
+    """Real-time log streaming using Server-Sent Events."""
+    def event_stream():
+        # Clean backlog to avoid old logs on fresh connect
+        while not _log_queue.empty():
+            _log_queue.get_nowait()
+        
+        # Wait for and yield logs from the global queue
+        while True:
+            try:
+                event = _log_queue.get(timeout=20)
+                yield f"data: {event}\n\n"
+            except queue.Empty:
+                # Keep-alive ping every 20s to avoid timeouts
+                yield "data: {\"level\": \"ping\"}\n\n"
+            except Exception:
+                break
+    
+    return Response(stream_with_context(event_stream()), mimetype="text/event-stream")
 
 # ── Registration logic ─────────────────────────────────────────────────────
 
 def _run_registration_bg(name: str, username: str, password: str, dates: list, hours: int, 
-                         should_export: bool = False, week_number: str = "N/A", 
+                         should_export: bool = False, should_send_email: bool = False,
+                         week_number: str = "N/A", 
                          pernr: str = None, posid: str = None, descr: str = None,
                          daily_descriptions: dict = None):
     """Run hour registration in a background thread, streaming progress via SSE."""
@@ -191,14 +211,34 @@ def _run_registration_bg(name: str, username: str, password: str, dates: list, h
                 push_log(f"📊 Generando Excel para la semana {week_number}...", "info")
                 # Use first description or generic for Excel if multiple
                 excel_descr = descr or (list(daily_descriptions.values())[0] if daily_descriptions else "")
-                excel_file, total_h = generate_excel(registered_dates, hours, description=excel_descr)
-                push_log(f"📧 Enviando correo con el reporte ({total_h}h)...", "info")
-                email_ok = send_email(excel_file, total_h, week_number)
-                email = os.getenv("EMAIL_ADDRESS_RECIPIENT", "[EMAIL_ADDRESS]")
-                if email_ok:
-                    push_log(f"✔ Reporte enviado a {email}", "success")
-                else:
-                    push_log(f"✖ Error enviando el correo.", "error")
+                excel_posid = posid or os.getenv("POSID", "N/A")
+
+                # Use a specific filename per user/week
+                ts_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                filename = f"rapport_sem{week_number}_{ts_str}.xlsx"
+                exports_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "exports")
+                os.makedirs(exports_dir, exist_ok=True)
+                full_path = os.path.join(exports_dir, filename)
+
+                excel_file, total_h = generate_excel(
+                    registered_dates, 
+                    hours, 
+                    filename=full_path, 
+                    description=excel_descr, 
+                    posid=excel_posid, 
+                    week_number=week_number
+                )
+                push_log(f"✔ Reporte generado: {filename}", "success")
+                push_log(f"LINK_DOWNLOAD:{filename}", "system") # Internal flag for JS to show a link
+
+                if should_send_email:
+                    push_log(f"📧 Enviando correo con el reporte ({total_h}h)...", "info")
+                    email_ok = send_email(excel_file, total_h, week_number)
+                    email = os.getenv("EMAIL_ADDRESS_RECIPIENT", "[EMAIL_ADDRESS]")
+                    if email_ok:
+                        push_log(f"✔ Reporte enviado a {email}", "success")
+                    else:
+                        push_log(f"✖ Error enviando el correo.", "error")
 
             push_log(
                 f"🏁 Proceso finalizado: {success_count}/{len(dates)} días registrados.",
@@ -252,6 +292,21 @@ def _next_friday_8pm() -> datetime.datetime:
         days_ahead += 7
     nf = now + datetime.timedelta(days=days_ahead)
     return nf.replace(hour=20, minute=0, second=0, microsecond=0)
+
+
+from flask import send_from_directory
+
+@app.route("/api/download/<filename>")
+def download_file(filename):
+    """Download a generated Excel report."""
+    exports_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "exports")
+    return send_from_directory(exports_dir, filename, as_attachment=True)
+
+
+@app.route("/api/status")
+def api_status():
+    """Return the current registration status."""
+    return jsonify({"running": _running_lock.locked()})
 
 
 # ── Entry point ────────────────────────────────────────────────────────────

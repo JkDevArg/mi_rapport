@@ -10,7 +10,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def generate_excel(dates, hours_per_day, filename="/tmp/rapport_export.xlsx", description="Desarrollo y análisis de migración"):
+def generate_excel(dates, hours_per_day, filename="/tmp/rapport_export.xlsx", description="Desarrollo", posid="N/A", week_number="N/A"):
     """
     Generates an Excel file with the registered hours.
     """
@@ -18,12 +18,25 @@ def generate_excel(dates, hours_per_day, filename="/tmp/rapport_export.xlsx", de
     ws = wb.active
     ws.title = "Rapport Horas"
 
-    # Headers
-    headers = ["Fecha", "Día", "Horas", "Descripción"]
+    # 1. First row: Personalized Title
+    user_name = os.getenv("NAME") or os.getenv("EMAIL_ADDRESS_SENDER") or os.getenv("USERNAME") or "USUARIO"
+    title_text = f"RAPPORT SEMANA {week_number} - {user_name.upper()}"
+    
+    ws.append([title_text])
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=5)
+    
+    # Style title row
+    title_cell = ws.cell(row=1, column=1)
+    title_cell.font = openpyxl.styles.Font(bold=True, color="FFFFFF", size=12)
+    title_cell.fill = openpyxl.styles.PatternFill(start_color="6366F1", end_color="6366F1", fill_type="solid")
+    title_cell.alignment = openpyxl.styles.Alignment(horizontal="center")
+
+    # 2. Second row: Column Headers
+    headers = ["Fecha", "Día", "Horas", "Proyecto", "Descripción"]
     ws.append(headers)
 
     # Style headers
-    for cell in ws[1]:
+    for cell in ws[2]:
         cell.font = openpyxl.styles.Font(bold=True)
         cell.fill = openpyxl.styles.PatternFill(start_color="CCE5FF", end_color="CCE5FF", fill_type="solid")
 
@@ -33,12 +46,17 @@ def generate_excel(dates, hours_per_day, filename="/tmp/rapport_export.xlsx", de
     for date_str in sorted(dates):
         date_obj = datetime.fromisoformat(date_str)
         day_name = day_names[date_obj.weekday()]
-        ws.append([date_obj.strftime("%Y-%m-%d"), day_name, hours_per_day, description])
+        ws.append([date_obj.strftime("%Y-%m-%d"), day_name, hours_per_day, posid, description])
         total_hours += hours_per_day
 
     ws.append([])
     ws.append(["TOTAL", "", total_hours])
     
+    # Adjust column widths slightly for better readability
+    dims = {"A": 15, "B": 12, "C": 10, "D": 25, "E": 60}
+    for col, value in dims.items():
+        ws.column_dimensions[col].width = value
+
     # Save
     wb.save(filename)
     return filename, total_hours
