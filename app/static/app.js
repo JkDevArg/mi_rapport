@@ -2,12 +2,27 @@
    Rapport Tool — Frontend JavaScript
    Real-time SSE log streaming + Form handling
    ═══════════════════════════════════════════════════ */
+// ── Project / Description toggle logic ──────────────
+const useDefaultProject = document.getElementById('useDefaultProject');
+const useDefaultDesc = document.getElementById('useDefaultDesc');
+const projectFields = document.getElementById('projectFields');
+const projectToggleArea = document.querySelector('.project-toggles');
+const projectFieldGroup = document.getElementById('projectFieldGroup');
+const descFieldGroup = document.getElementById('descFieldGroup');
+const projectInput = document.getElementById('project');
+const descInput = document.getElementById('description');
+
+const useDailyDesc = document.getElementById('useDailyDesc');
+const dailyDescFields = document.getElementById('dailyDescFields');
+const defaultDescRow = document.getElementById('defaultDescRow');
 
 // ── Peruvian Clock ──────────────────────────────────
+// ... (omitted for brevity in replace call, but I'll write the whole function below)
 function updateClock() {
   const now = new Date();
   const opts = { timeZone: 'America/Lima', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
-  document.getElementById('peruvianClock').textContent = now.toLocaleTimeString('es-PE', opts);
+  const clockEl = document.getElementById('peruvianClock');
+  if (clockEl) clockEl.textContent = now.toLocaleTimeString('es-PE', opts);
 }
 updateClock();
 setInterval(updateClock, 1000);
@@ -16,37 +31,54 @@ setInterval(updateClock, 1000);
 document.querySelectorAll('.day-pill').forEach(pill => {
   pill.addEventListener('click', () => {
     const cb = pill.querySelector('.day-checkbox');
-    pill.classList.toggle('checked', cb.checked);
-    updateHoursTotal();
+    // The click event on label already toggles the checkbox IF we don't prevent default.
+    // In index.html, it's a label with an input inside. 
+    // Wait, the previous code had pill.classList.toggle('checked', cb.checked);
+    // but the checkbox state might not have updated yet if this runs on label click.
+    setTimeout(() => {
+      pill.classList.toggle('checked', cb.checked);
+      updateHoursTotal();
+      renderDailyDescFields();
+    }, 0);
   });
 });
 
 // ── Hours control ───────────────────────────────────
 const hoursInput = document.getElementById('hours');
-document.getElementById('hoursUp').addEventListener('click', () => {
-  const v = parseInt(hoursInput.value);
-  if (v < 12) { hoursInput.value = v + 1; updateHoursTotal(); }
-});
-document.getElementById('hoursDown').addEventListener('click', () => {
-  const v = parseInt(hoursInput.value);
-  if (v > 1) { hoursInput.value = v - 1; updateHoursTotal(); }
-});
+const upBtn = document.getElementById('hoursUp');
+const downBtn = document.getElementById('hoursDown');
+if (upBtn) {
+  upBtn.addEventListener('click', () => {
+    const v = parseInt(hoursInput.value);
+    if (v < 12) { hoursInput.value = v + 1; updateHoursTotal(); }
+  });
+}
+if (downBtn) {
+  downBtn.addEventListener('click', () => {
+    const v = parseInt(hoursInput.value);
+    if (v > 1) { hoursInput.value = v - 1; updateHoursTotal(); }
+  });
+}
 
 function updateHoursTotal() {
   const checkedDays = document.querySelectorAll('.day-checkbox:checked').length;
   const hours = parseInt(hoursInput.value);
   const total = checkedDays * hours;
-  document.getElementById('hoursTotal').innerHTML = `Total semana: <strong>${total}h</strong>`;
+  const totalEl = document.getElementById('hoursTotal');
+  if (totalEl) totalEl.innerHTML = `Total semana: <strong>${total}h</strong>`;
 }
 updateHoursTotal();
 
 // ── Password toggle ─────────────────────────────────
-document.getElementById('togglePass').addEventListener('click', () => {
-  const input = document.getElementById('password');
-  const isPass = input.type === 'password';
-  input.type = isPass ? 'text' : 'password';
-  document.getElementById('eyeIcon').style.opacity = isPass ? '0.5' : '1';
-});
+const togglePass = document.getElementById('togglePass');
+if (togglePass) {
+  togglePass.addEventListener('click', () => {
+    const input = document.getElementById('password');
+    const isPass = input.type === 'password';
+    input.type = isPass ? 'text' : 'password';
+    document.getElementById('eyeIcon').style.opacity = isPass ? '0.5' : '1';
+  });
+}
 
 // ── SSE Log Stream ──────────────────────────────────
 const consoleBody = document.getElementById('consoleBody');
@@ -73,7 +105,8 @@ function escapeHtml(str) {
 function startSSE() {
   const evtSource = new EventSource('/api/stream');
   sseConnected = true;
-  document.getElementById('liveBadge').style.opacity = '1';
+  const liveBadge = document.getElementById('liveBadge');
+  if (liveBadge) liveBadge.style.opacity = '1';
 
   evtSource.onmessage = (e) => {
     try {
@@ -84,7 +117,7 @@ function startSSE() {
 
   evtSource.onerror = () => {
     sseConnected = false;
-    document.getElementById('liveBadge').style.opacity = '0.4';
+    if (liveBadge) liveBadge.style.opacity = '0.4';
     evtSource.close();
     // Reconnect after 3s
     setTimeout(startSSE, 3000);
@@ -97,9 +130,52 @@ const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
 
 function setStatus(state, text) {
-  statusDot.className = `status-dot ${state}`;
-  statusText.textContent = text;
+  if (statusDot) statusDot.className = `status-dot ${state}`;
+  if (statusText) statusText.textContent = text;
 }
+
+// ── Daily description rendering ─────────────────────
+function renderDailyDescFields() {
+  if (!useDailyDesc.checked) {
+    dailyDescFields.style.display = 'none';
+    return;
+  }
+
+  const selectedCheckboxes = document.querySelectorAll('.day-checkbox:checked');
+  if (selectedCheckboxes.length === 0) {
+    dailyDescFields.innerHTML = '<p class="no-days-msg">Selecciona días arriba para ingresar descripciones.</p>';
+  } else {
+    let html = '<h3 class="daily-desc-title">Descripciones por día</h3>';
+    selectedCheckboxes.forEach(cb => {
+      const date = cb.value;
+      const label = cb.parentElement.querySelector('.day-name').textContent;
+      const displayDate = cb.parentElement.querySelector('.day-date').textContent;
+      
+      // Keep existing values if already typed
+      const existingVal = document.querySelector(`.daily-textarea[data-date="${date}"]`)?.value || '';
+
+      html += `
+        <div class="form-group daily-desc-item">
+          <label class="form-label">${label} (${displayDate})</label>
+          <div class="input-wrapper textarea-wrapper">
+            <span class="input-icon textarea-icon">✏️</span>
+            <textarea class="form-input form-textarea daily-textarea" 
+                      data-date="${date}" 
+                      placeholder="Descripción para este día..." 
+                      rows="2">${existingVal}</textarea>
+          </div>
+        </div>
+      `;
+    });
+    dailyDescFields.innerHTML = html;
+  }
+  dailyDescFields.style.display = 'block';
+}
+
+useDailyDesc.addEventListener('change', () => {
+  renderDailyDescFields();
+  updateProjectFields();
+});
 
 // ── Form submission ─────────────────────────────────
 const form = document.getElementById('rapportForm');
@@ -110,12 +186,23 @@ const btnText = document.getElementById('btnText');
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
 
+  if (!validateProjectFields()) return;
+
   const username = document.getElementById('username').value.trim();
   const password = document.getElementById('password').value.trim();
   const dates = [...document.querySelectorAll('.day-checkbox:checked')].map(cb => cb.value);
   const hours = parseInt(hoursInput.value);
+  const project = document.getElementById('project').value.trim();
+  const description = document.getElementById('description').value.trim();
   const exportFlag = document.getElementById('exportCheck').checked;
   const weekNum = form.getAttribute('data-week');
+
+  const dailyDescriptions = {};
+  if (useDailyDesc.checked) {
+    document.querySelectorAll('.daily-textarea').forEach(ta => {
+      dailyDescriptions[ta.getAttribute('data-date')] = ta.value.trim();
+    });
+  }
 
   if (!username || !password) {
     showToast('warn', '⚠', 'Ingresa usuario y contraseña.');
@@ -133,17 +220,28 @@ form.addEventListener('submit', async (e) => {
   setStatus('running', 'Registrando...');
 
   try {
+    const payload = { 
+      username, 
+      password, 
+      dates, 
+      hours, 
+      export: exportFlag, 
+      posid: useDefaultProject.checked ? null : project, 
+      descr: useDefaultDesc.checked ? null : description, 
+      daily_descriptions: useDailyDesc.checked ? dailyDescriptions : null,
+      week_number: weekNum 
+    };
+
     const res = await fetch('/api/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password, dates, hours, export: exportFlag, week_number: weekNum }),
+      body: JSON.stringify(payload),
     });
     const data = await res.json();
 
     if (data.ok) {
       showToast('success', '✔', data.message);
       setStatus('running', 'En progreso...');
-      // Status will update via SSE logs
       monitorCompletion();
     } else {
       showToast('error', '✖', data.error || 'Error al iniciar el registro.');
@@ -158,7 +256,6 @@ form.addEventListener('submit', async (e) => {
 });
 
 function monitorCompletion() {
-  // Poll /api/status until no longer running
   const poll = setInterval(async () => {
     try {
       const res = await fetch('/api/status');
@@ -180,10 +277,13 @@ function resetButton() {
 }
 
 // ── Clear logs ──────────────────────────────────────
-document.getElementById('clearLogsBtn').addEventListener('click', () => {
-  consoleBody.innerHTML = '';
-  appendLog(new Date().toLocaleTimeString('es-PE', { timeZone: 'America/Lima', hour12: false }), 'Consola limpiada.', 'info');
-});
+const clearBtn = document.getElementById('clearLogsBtn');
+if (clearBtn) {
+  clearBtn.addEventListener('click', () => {
+    consoleBody.innerHTML = '';
+    appendLog(new Date().toLocaleTimeString('es-PE', { timeZone: 'America/Lima', hour12: false }), 'Consola limpiada.', 'info');
+  });
+}
 
 // ── Fetch status on load ────────────────────────────
 (async () => {
@@ -208,15 +308,78 @@ function showToast(type, icon, message, duration = 5000) {
   setTimeout(() => dismissToast(toast), duration);
 }
 
-function dismissToast(toast) {
+// Global dismissToast for onclick
+window.dismissToast = function(toast) {
   toast.classList.add('hide');
   toast.addEventListener('animationend', () => toast.remove(), { once: true });
+};
+
+function updateProjectFields() {
+  const showProject = !useDefaultProject.checked;
+  const isDaily = useDailyDesc.checked;
+  const showDesc = !useDefaultDesc.checked && !isDaily;
+  
+  // Hide default desc toggle if daily is on
+  defaultDescRow.style.display = isDaily ? 'none' : 'flex';
+
+  projectFieldGroup.classList.toggle('show', showProject);
+  descFieldGroup.classList.toggle('show', showDesc);
+  
+  const anyCustom = showProject || showDesc || isDaily;
+  projectFields.classList.toggle('visible', anyCustom);
+  projectToggleArea.classList.toggle('has-fields', anyCustom);
+
+  projectInput.required = showProject;
+  descInput.required = showDesc;
 }
 
-// ── Smooth nav scroll ───────────────────────────────
+useDefaultProject.addEventListener('change', updateProjectFields);
+useDefaultDesc.addEventListener('change', updateProjectFields);
+
+// Remove error highlight on input
+[projectInput, descInput].forEach(el => {
+  if (el) el.addEventListener('input', () => el.classList.remove('input-error'));
+});
+
+// Init on load
+updateProjectFields();
+
+function validateProjectFields() {
+  let valid = true;
+
+  if (!useDefaultProject.checked && !projectInput.value.trim()) {
+    projectInput.classList.add('input-error');
+    projectInput.focus();
+    showToast('warn', '⚠', 'El campo Proyecto es obligatorio.');
+    valid = false;
+  }
+
+  if (!useDailyDesc.checked && !useDefaultDesc.checked && !descInput.value.trim()) {
+    descInput.classList.add('input-error');
+    if (valid) descInput.focus();
+    showToast('warn', '⚠', 'El campo Descripción es obligatorio.');
+    valid = false;
+  }
+  
+  if (useDailyDesc.checked) {
+    const textareas = document.querySelectorAll('.daily-textarea');
+    textareas.forEach(ta => {
+      if (!ta.value.trim()) {
+        ta.classList.add('input-error');
+        if (valid) ta.focus();
+        showToast('warn', '⚠', 'Todas las descripciones diarias son obligatorias.');
+        valid = false;
+      }
+    });
+  }
+
+  return valid;
+}
+
 document.querySelectorAll('.nav-item').forEach(a => {
   a.addEventListener('click', (e) => {
     document.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
     a.classList.add('active');
   });
 });
+

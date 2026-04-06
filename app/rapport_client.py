@@ -53,46 +53,129 @@ class RapportClient:
 
         self._sap_passport: Optional[str] = None
         self._x_csrf_token: Optional[str] = None
+        
+        # Session cache path
+        self.session_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs", f"session_{username}.json")
+
+    # ──────────────────────────────────────────────
+    # Persistence
+    # ──────────────────────────────────────────────
+
+    def _save_session(self):
+        """Save cookies and CSRF token to a local file."""
+        if not self._context:
+            return
+        
+        try:
+            state = {
+                "cookies": self._context.cookies(),
+                "token": self._x_csrf_token,
+                "timestamp": time.time()
+            }
+            os.makedirs(os.path.dirname(self.session_file), exist_ok=True)
+            import json
+            with open(self.session_file, "w") as f:
+                json.dump(state, f)
+            logger.info("Session saved to local storage.")
+        except Exception as e:
+            logger.error(f"Error saving session: {e}")
+
+    def _load_session(self) -> bool:
+        """Load cookies and CSRF token from local file. Returns True if loaded."""
+        if not os.path.exists(self.session_file):
+            return False
+        
+        try:
+            import json
+            with open(self.session_file, "r") as f:
+                state = json.load(f)
+            
+            # Check for expiration (e.g., 12 hours)
+            if time.time() - state.get("timestamp", 0) > 12 * 3600:
+                logger.info("Cached session expired.")
+                return False
+
+            self._x_csrf_token = state.get("token")
+            cookies = state.get("cookies", [])
+            
+            if not self._playwright:
+                self._playwright = sync_playwright().start()
+                self._browser = self._playwright.chromium.launch(headless=self.headless)
+                
+            self._context = self._browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/145.0.0.0 Safari/537.36"
+                ),
+                locale="es",
+                timezone_id="America/Lima",
+            )
+            self._context.add_cookies(cookies)
+            self._page = self._context.new_page()
+            
+            logger.info("Session loaded from local storage.")
+            return True
+        except Exception as e:
+            logger.error(f"Error loading session: {e}")
+            return False
 
     # ──────────────────────────────────────────────
     # Lifecycle
     # ──────────────────────────────────────────────
 
-    def login(self):
+    def login(self, force: bool = False):
         """Launch browser, log in, and capture required session data."""
-        logger.info(f"Starting Playwright (headless={self.headless})...")
-        self._playwright = sync_playwright().start()
-        self._browser = self._playwright.chromium.launch(
-            headless=self.headless,
-            args=["--no-sandbox", "--disable-dev-shm-usage"],
-        )
-        self._context = self._browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/145.0.0.0 Safari/537.36"
-            ),
-            locale="es",
-            timezone_id="America/Lima",
-        )
-        self._page = self._context.new_page()
+        if not force and self._load_session():
+            # Quick check if token is still valid by doing a small request
+            try:
+                # We can't easily check if the token is valid without a request.
+                # We'll just trust the loaded session and retry if it fails in register_day.
+                return
+            except:
+                pass
+
+        logger.info(f"Starting Playwright login (headless={self.headless})...")
+        if not self._playwright:
+            self._playwright = sync_playwright().start()
+        if not self._browser:
+            self._browser = self._playwright.chromium.launch(
+                headless=self.headless,
+                args=["--no-sandbox", "--disable-dev-shm-usage"],
+            )
+        if not self._context:
+            self._context = self._browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/145.0.0.0 Safari/537.36"
+                ),
+                locale="es",
+                timezone_id="America/Lima",
+            )
+        if not self._page:
+            self._page = self._context.new_page()
 
         logger.info("Navigating to login page...")
         self._page.goto(BASE_URL, wait_until="networkidle", timeout=60000)
 
-        # Fill username
-        logger.info("Filling credentials...")
-        self._page.wait_for_selector("#USERNAME_FIELD-inner", timeout=30000)
-        self._page.fill("#USERNAME_FIELD-inner", self.username)
-        self._page.fill("#PASSWORD_FIELD-inner", self.password)
+        # check if already logged in (no username field)
+        try:
+            self._page.wait_for_selector("#USERNAME_FIELD-inner", timeout=5000)
+            # Fill username
+            logger.info("Filling credentials...")
+            self._page.fill("#USERNAME_FIELD-inner", self.username)
+            self._page.fill("#PASSWORD_FIELD-inner", self.password)
 
-        # Click login button
-        self._page.click(".sapMBtnContent.sapMLabelBold.sapUiSraDisplayBeforeLogin")
-        logger.info("Login button clicked, waiting for navigation...")
-
-        # Wait for Fiori Launchpad to load
-        self._page.wait_for_load_state("networkidle", timeout=60000)
-        time.sleep(3)  # Extra safety margin
+            # Click login button
+            self._page.click(".sapMBtnContent.sapMLabelBold.sapUiSraDisplayBeforeLogin")
+            logger.info("Login button clicked, waiting for navigation...")
+            
+            # Wait for Fiori Launchpad to load
+            self._page.wait_for_load_state("networkidle", timeout=60000)
+            time.sleep(3)  # Extra safety margin
+        except:
+            logger.info("Already logged in or login form not found.")
 
         # Navigate to the rapport page
         logger.info("Navigating to Rapport page...")
@@ -101,6 +184,9 @@ class RapportClient:
 
         # Fetch CSRF token
         self._fetch_csrf_token()
+        
+        # Save session
+        self._save_session()
 
         logger.info("Login successful.")
 
@@ -115,17 +201,20 @@ class RapportClient:
         self._x_csrf_token = response.headers.get("x-csrf-token")
         logger.info(f"CSRF token obtained: {self._x_csrf_token[:20] if self._x_csrf_token else 'None'}...")
 
-    def register_day(self, date: datetime.date, hours: int = 8) -> bool:
+    def register_day(self, date: datetime.date, hours: int = 8, description: str = None, retry: bool = True) -> bool:
         """
         Register hours for a single day by POSTing to the OData endpoint.
 
         Returns True on success, False on failure.
         """
         if not self._page:
-            raise RuntimeError("Client not logged in. Call login() first.")
+            # Try loading session first if not logged in
+            if not self._load_session():
+                raise RuntimeError("Client not logged in. Call login() first.")
 
         date_str = f"{date.isoformat()}T00:00:00"
         duration = _hours_to_sap_duration(hours)
+        final_descr = description or self.descr
 
         payload = {
             "IDatum": date_str,
@@ -148,7 +237,7 @@ class RapportClient:
                     "Desp": "T",
                     "Situacion": "",
                     "Dura": duration,
-                    "Descr": self.descr,
+                    "Descr": final_descr,
                     "Tip": "ZI",
                     "Luga": "",
                     "Emp": "",
@@ -204,6 +293,11 @@ class RapportClient:
             if status in (200, 201, 204):
                 logger.info(f"Day {date.isoformat()} registered successfully.")
                 return True
+            elif status in (401, 403, 400) and retry:
+                logger.warning(f"Registration failed with {status}. Attempting re-login and retry...")
+                self.login(force=True)
+                # Retry once
+                return self.register_day(date, hours, description, retry=False)
             else:
                 body = response.text()
                 logger.error(f"Failed to register {date.isoformat()}: {status} — {body[:200]}")
@@ -211,16 +305,33 @@ class RapportClient:
 
         except Exception as exc:
             logger.error(f"Exception registering {date.isoformat()}: {exc}")
+            if retry:
+                logger.warning("Attempting re-login after exception...")
+                self.login(force=True)
+                return self.register_day(date, hours, description, retry=False)
             return False
 
     def close(self):
         """Clean up Playwright resources."""
         if self._page:
-            self._page.close()
+            try:
+                self._page.close()
+            except:
+                pass
         if self._context:
-            self._context.close()
+            try:
+                self._context.close()
+            except:
+                pass
         if self._browser:
-            self._browser.close()
+            try:
+                self._browser.close()
+            except:
+                pass
         if self._playwright:
-            self._playwright.stop()
+            try:
+                self._playwright.stop()
+            except:
+                pass
         logger.info("Browser session closed.")
+

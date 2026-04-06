@@ -177,6 +177,89 @@
             </div>
           </div>
 
+          <div class="card mb-4" id="projectCard">
+            <div class="card-header">
+              <div class="card-icon">📝</div>
+              <div>
+                <h2 class="card-title">Descripción y Proyecto</h2>
+                <p class="card-desc">Configura el proyecto y descripción para el registro de horas</p>
+              </div>
+            </div>
+
+            <!-- Toggle options -->
+            <div class="project-toggles">
+
+              <label class="option-toggle-row" id="defaultProjectRow">
+                <div class="option-toggle-left">
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="useDefaultProject" checked />
+                    <span class="toggle-slider"></span>
+                  </label>
+                  <div class="option-toggle-info">
+                    <span class="option-toggle-label">Usar proyecto por defecto</span>
+                    <span class="option-toggle-hint">Se usará el proyecto configurado en el sistema</span>
+                  </div>
+                </div>
+              </label>
+
+              <label class="option-toggle-row" id="dailyDescRow">
+                <div class="option-toggle-left">
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="useDailyDesc" />
+                    <span class="toggle-slider"></span>
+                  </label>
+                  <div class="option-toggle-info">
+                    <span class="option-toggle-label">Descripción por día</span>
+                    <span class="option-toggle-hint">Permite ingresar una descripción diferente para cada día seleccionado</span>
+                  </div>
+                </div>
+              </label>
+
+              <label class="option-toggle-row" id="defaultDescRow">
+                <div class="option-toggle-left">
+                  <label class="toggle-switch">
+                    <input type="checkbox" id="useDefaultDesc" checked />
+                    <span class="toggle-slider"></span>
+                  </label>
+                  <div class="option-toggle-info">
+                    <span class="option-toggle-label">Usar descripción por defecto</span>
+                    <span class="option-toggle-hint">Se usará la descripción predeterminada del sistema</span>
+                  </div>
+                </div>
+              </label>
+
+              <div id="dailyDescFields" class="daily-desc-container" style="display: none;">
+                <!-- Dinámicamente via JS -->
+              </div>
+
+            <!-- Custom fields (shown only when toggles are OFF) -->
+            <div class="project-fields" id="projectFields">
+
+              <div class="form-group project-field" id="projectFieldGroup">
+                <label for="project" class="form-label">
+                  Proyecto <span class="required-star">*</span>
+                </label>
+                <div class="input-wrapper">
+                  <span class="input-icon">🗂</span>
+                  <input type="text" id="project" name="project" class="form-input" placeholder="Nombre del proyecto"
+                    autocomplete="off" />
+                </div>
+              </div>
+
+              <div class="form-group desc-field" id="descFieldGroup">
+                <label for="description" class="form-label">
+                  Descripción <span class="required-star">*</span>
+                </label>
+                <div class="input-wrapper textarea-wrapper">
+                  <span class="input-icon textarea-icon">✏️</span>
+                  <textarea id="description" name="description" class="form-input form-textarea"
+                    placeholder="Descripción de las actividades realizadas..." rows="3"></textarea>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
           <!-- Submit button -->
           <div class="actions-row mt-6">
             <button type="submit" class="btn-primary" id="submitBtn">

@@ -1124,3 +1124,249 @@ input:checked+.toggle-slider:before {
     width: 100%;
   }
 }
+
+.project-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 0;
+  transition: margin-bottom 0.3s ease;
+}
+
+.project-toggles.has-fields {
+  margin-bottom: 20px;
+}
+
+.option-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition);
+  user-select: none;
+}
+
+.option-toggle-row:hover {
+  border-color: var(--border-accent);
+  background: rgba(99, 102, 241, 0.05);
+}
+
+.option-toggle-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  pointer-events: none;
+}
+
+.option-toggle-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.option-toggle-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.option-toggle-hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* ── Project fields ──────────────────────────────── */
+.project-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.25s ease;
+}
+
+.project-fields.visible {
+  max-height: 320px;
+  opacity: 1;
+}
+
+.project-field,
+.desc-field {
+  display: none;
+}
+
+.project-field.show,
+.desc-field.show {
+  display: flex;
+}
+
+.required-star {
+  color: var(--error);
+  margin-left: 2px;
+}
+
+/* ── Textarea ────────────────────────────────────── */
+.textarea-wrapper {
+  align-items: flex-start !important;
+}
+
+.textarea-icon {
+  top: 12px !important;
+  align-self: flex-start;
+  margin-top: 12px;
+}
+
+.form-textarea {
+  resize: vertical;
+  min-height: 80px;
+  padding-top: 12px !important;
+  padding-bottom: 12px !important;
+  line-height: 1.5;
+  font-family: var(--font);
+}
+
+/* Input error highlight */
+.form-input.input-error {
+  border-color: var(--error) !important;
+  box-shadow: 0 0 0 3px var(--error-glow) !important;
+  animation: shake 0.3s ease;
+}
+
+@keyframes shake {
+
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  25% {
+    transform: translateX(-4px);
+  }
+
+  75% {
+    transform: translateX(4px);
+  }
+}
+
+/* ── Daily Descriptions UI ─────────────────────────────────────── */
+.daily-desc-container {
+  margin-top: 24px;
+  padding: 24px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: var(--radius);
+  border: 1px dashed var(--border-accent);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  animation: slideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.daily-desc-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.daily-desc-item {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 16px;
+}
+
+.daily-desc-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.no-days-msg {
+  font-size: 13px;
+  color: var(--text-dim);
+  text-align: center;
+  padding: 24px;
+  background: var(--bg-input);
+  border-radius: var(--radius-sm);
+  border: 1px dashed var(--border);
+}
+
+.daily-textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+
+/* Fix for project-toggles alignment */
+.option-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: all var(--transition);
+  border-radius: var(--radius-sm);
+}
+
+.option-toggle-row:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.option-toggle-row:last-of-type {
+  border-bottom: none;
+}
+
+.option-toggle-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.option-toggle-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.option-toggle-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.option-toggle-hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+/* Spinner for loading state */
+.spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: spin 0.8s cubic-bezier(0.5, 0, 0.5, 1) infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.input-error {
+  border-color: var(--error) !important;
+  box-shadow: 0 0 0 3px var(--error-glow) !important;
+  background: rgba(244, 63, 94, 0.05) !important;
+}
