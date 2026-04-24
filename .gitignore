@@ -1,2 +1,5 @@
 .env
 logs
+exports
+app/exports
+app/logs
