@@ -21,7 +21,7 @@ from scheduler import RapportScheduler
 
 # ── Setup ──────────────────────────────────────────────────────────────────
 load_dotenv() # Carga .env local o variables de entorno del sistema
-LOGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs")
+LOGS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 os.makedirs(LOGS_DIR, exist_ok=True)
 log_file = os.path.join(LOGS_DIR, "rapport.log")
 
@@ -59,7 +59,93 @@ def push_log(message: str, level: str = "info"):
     logger.info(f"[{level.upper()}] {message}")
 
 
-from exporter import generate_excel, send_email
+from cryptography.fernet import Fernet
+import base64
+
+def get_crypto_key():
+    key_file = os.path.join(LOGS_DIR, ".key")
+    if not os.path.exists(key_file):
+        key = Fernet.generate_key()
+        with open(key_file, "wb") as f:
+            f.write(key)
+    else:
+        with open(key_file, "rb") as f:
+            key = f.read()
+    return key
+
+def encrypt_password(password: str) -> str:
+    f = Fernet(get_crypto_key())
+    return f.encrypt(password.encode()).decode()
+
+def decrypt_password(encrypted_password: str) -> str:
+    try:
+        f = Fernet(get_crypto_key())
+        return f.decrypt(encrypted_password.encode()).decode()
+    except:
+        return encrypted_password # Fallback if not encrypted
+
+
+@app.route("/api/encrypt", methods=["POST"])
+def api_encrypt():
+    """Encrypt a password and return it."""
+    data = request.get_json()
+    password = data.get("password")
+    if not password:
+        return jsonify({"error": "No password"}), 400
+    return jsonify({"encrypted": encrypt_password(password)})
+
+
+def log_history(dates: list, hours: float, details: list, source: str = "manual"):
+    """Save registration history to a JSON file, deduplicating by week."""
+    history_file = os.path.join(LOGS_DIR, "history.json")
+    try:
+        if os.path.exists(history_file):
+            with open(history_file, "r", encoding="utf-8") as f:
+                history = json.load(f)
+        else:
+            history = []
+
+        # Normalize incoming dates to ISO strings
+        new_dates_set = set(
+            d.isoformat() if isinstance(d, datetime.date) else d for d in dates
+        )
+
+        # Compute ISO week key for the new entry (e.g. "2026-W17")
+        def _week_key(iso_str):
+            d = datetime.date.fromisoformat(iso_str)
+            y, w, _ = d.isocalendar()
+            return f"{y}-W{w:02d}"
+
+        new_week_keys = {_week_key(d) for d in new_dates_set}
+
+        # Remove any existing entry that shares at least one week with the new entry
+        history = [
+            e for e in history
+            if not new_week_keys.intersection(
+                {_week_key(dt) for dt in e.get("dates", [])}
+            )
+        ]
+
+        entry = {
+            "timestamp": datetime.datetime.now(tz=PERU_TZ).isoformat(),
+            "dates": sorted(new_dates_set),
+            "total_hours_daily": hours,
+            "details": details,
+            "source": source,
+        }
+        history.append(entry)
+
+        with open(history_file, "w", encoding="utf-8") as f:
+            json.dump(history, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        logger.error(f"Error logging history: {e}")
+
+
+from exporter import generate_excel, generate_pdf, send_email, send_webhook
+
+# ── Paths ──────────────────────────────────────────────────────────────────
+EXPORTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "exports")
+os.makedirs(EXPORTS_DIR, exist_ok=True)
 
 # ── Routes ─────────────────────────────────────────────────────────────────
 
@@ -117,13 +203,18 @@ def api_register():
     hours = int(data.get("hours", 8))
     should_export = data.get("export", False)
     should_send_email = data.get("send_email", False)
+    should_send_webhook = data.get("send_webhook", False)
+    test_email = data.get("test_email", False)
     week_number = data.get("week_number", "N/A")
 
     name = (data.get("name") or os.getenv("NAME", "")).strip()
     pernr = (data.get("pernr") or os.getenv("PERNR", "")).strip()
+    password = (data.get("password") or os.getenv("PASSWORD", "")).strip()
+    password = decrypt_password(password)
     posid = (data.get("posid") or os.getenv("POSID", "")).strip()
     descr = (data.get("descr") or os.getenv("DESCR", "")).strip()
     daily_descriptions = data.get("daily_descriptions")
+    multi_client = data.get("multi_client") # List of {project, hours, description}
 
     if not username or not password:
         return jsonify({"ok": False, "error": "Usuario y contraseña son obligatorios."}), 400
@@ -139,7 +230,7 @@ def api_register():
 
     thread = threading.Thread(
         target=_run_registration_bg,
-        args=(name, username, password, sorted(dates), hours, should_export, should_send_email, week_number, pernr, posid, descr, daily_descriptions),
+        args=(name, username, password, sorted(dates), hours, should_export, should_send_email, week_number, pernr, posid, descr, daily_descriptions, should_send_webhook, test_email, multi_client),
         daemon=True,
     )
     thread.start()
@@ -173,7 +264,11 @@ def _run_registration_bg(name: str, username: str, password: str, dates: list, h
                          should_export: bool = False, should_send_email: bool = False,
                          week_number: str = "N/A", 
                          pernr: str = None, posid: str = None, descr: str = None,
-                         daily_descriptions: dict = None):
+                         daily_descriptions: dict = None,
+                         should_send_webhook: bool = False,
+                         test_email: bool = False,
+                         multi_client: list = None,
+                         source: str = "manual"):
     """Run hour registration in a background thread, streaming progress via SSE."""
     global _is_running
     with _running_lock:
@@ -195,50 +290,65 @@ def _run_registration_bg(name: str, username: str, password: str, dates: list, h
             registered_dates = []
             for date in dates:
                 date_iso = date.isoformat()
-                # Get daily description if available
-                day_descr = (daily_descriptions or {}).get(date_iso) or descr
                 
-                push_log(f"📅 Registrando {date.strftime('%A %d/%m/%Y')} — {hours}h...", "info")
-                ok = client.register_day(date=date, hours=hours, description=day_descr)
-                if ok:
-                    push_log(f"  ✔ {date.strftime('%d/%m/%Y')} registrado correctamente.", "success")
+                if multi_client:
+                    push_log(f"📅 Registrando {date.strftime('%A %d/%m/%Y')} (Modo Multi-Cliente)...", "info")
+                    for entry in multi_client:
+                        p_hours = entry.get("hours", 0)
+                        p_posid = entry.get("project") or posid
+                        p_descr = entry.get("description") or descr
+                        
+                        push_log(f"  🔹 {p_posid}: {p_hours}h — {p_descr}", "info")
+                        client.register_day(date=date, hours=p_hours, description=p_descr, posid=p_posid)
+                    
+                    push_log(f"  ✔ {date.strftime('%d/%m/%Y')} completado.", "success")
                     success_count += 1
                     registered_dates.append(date.isoformat())
                 else:
-                    push_log(f"  ✖ Error al registrar {date.strftime('%d/%m/%Y')}.", "error")
-
-            if success_count > 0 and should_export:
-                push_log(f"📊 Generando Excel para la semana {week_number}...", "info")
-                # Use first description or generic for Excel if multiple
-                excel_descr = descr or (list(daily_descriptions.values())[0] if daily_descriptions else "")
-                excel_posid = posid or os.getenv("POSID", "N/A")
-
-                # Use a specific filename per user/week
-                ts_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"rapport_sem{week_number}_{ts_str}.xlsx"
-                exports_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "exports")
-                os.makedirs(exports_dir, exist_ok=True)
-                full_path = os.path.join(exports_dir, filename)
-
-                excel_file, total_h = generate_excel(
-                    registered_dates, 
-                    hours, 
-                    filename=full_path, 
-                    description=excel_descr, 
-                    posid=excel_posid, 
-                    week_number=week_number
-                )
-                push_log(f"✔ Reporte generado: {filename}", "success")
-                push_log(f"LINK_DOWNLOAD:{filename}", "system") # Internal flag for JS to show a link
-
-                if should_send_email:
-                    push_log(f"📧 Enviando correo con el reporte ({total_h}h)...", "info")
-                    email_ok = send_email(excel_file, total_h, week_number)
-                    email = os.getenv("EMAIL_ADDRESS_RECIPIENT", "[EMAIL_ADDRESS]")
-                    if email_ok:
-                        push_log(f"✔ Reporte enviado a {email}", "success")
+                    # Get daily description if available
+                    day_descr = (daily_descriptions or {}).get(date_iso) or descr
+                    
+                    push_log(f"📅 Registrando {date.strftime('%A %d/%m/%Y')} — {hours}h...", "info")
+                    ok = client.register_day(date=date, hours=hours, description=day_descr)
+                    if ok:
+                        push_log(f"  ✔ {date.strftime('%d/%m/%Y')} registrado correctamente.", "success")
+                        success_count += 1
+                        registered_dates.append(date.isoformat())
                     else:
-                        push_log(f"✖ Error enviando el correo.", "error")
+                        push_log(f"  ✖ Error al registrar {date.strftime('%d/%m/%Y')}.", "error")
+
+            if success_count > 0:
+                # Log history
+                history_details = multi_client if multi_client else [{"project": posid, "hours": hours, "description": descr}]
+                log_history(dates, hours, history_details, source=source)
+
+                if should_export:
+                    push_log(f"📊 Generando reportes para la semana {week_number}...", "info")
+                    excel_filename = os.path.join(EXPORTS_DIR, f"Rapport_{week_number}_{name.replace(' ', '_')}.xlsx")
+                    pdf_filename = os.path.join(EXPORTS_DIR, f"Rapport_{week_number}_{name.replace(' ', '_')}.pdf")
+                    
+                    generate_excel(registered_dates, hours, excel_filename, descr, posid, week_number, multi_client)
+                    generate_pdf(registered_dates, hours, pdf_filename, descr, posid, week_number, multi_client)
+                    push_log(f"📄 Reportes generados: Excel y PDF.", "info")
+                    push_log(f"LINK_DOWNLOAD:{os.path.basename(excel_filename)}", "system")
+                    push_log(f"LINK_DOWNLOAD_PDF:{os.path.basename(pdf_filename)}", "system")
+
+                    if should_send_email:
+                        push_log(f"📧 Enviando correo con el reporte...", "info")
+                        email_ok = send_email(excel_filename, hours, week_number)
+                        email = os.getenv("EMAIL_ADDRESS_RECIPIENT", "[EMAIL_ADDRESS]")
+                        if email_ok:
+                            push_log(f"✔ Reporte enviado a {email}", "success")
+                        else:
+                            push_log(f"✖ Error enviando el correo.", "error")
+
+                    if should_send_webhook:
+                        push_log(f"🌐 Enviando reporte al webhook (semana {week_number})...", "info")
+                        webhook_ok = send_webhook(excel_filename, week_number, name=name, test_email=test_email)
+                        if webhook_ok:
+                            push_log(f"✔ Webhook entregado correctamente.", "success")
+                        else:
+                            push_log(f"✖ Error al enviar el webhook.", "error")
 
             push_log(
                 f"🏁 Proceso finalizado: {success_count}/{len(dates)} días registrados.",
@@ -257,6 +367,7 @@ def _auto_register():
     name = os.getenv("NAME", "").strip()
     username = os.getenv("USERNAME", "").strip()
     password = os.getenv("PASSWORD", "").strip()
+    password = decrypt_password(password)
     pernr = os.getenv("PERNR", "").strip()
     posid = os.getenv("POSID", "").strip()
     descr = os.getenv("DESCR", "").strip()
@@ -268,20 +379,34 @@ def _auto_register():
 
     today = datetime.date.today()
     monday = today - datetime.timedelta(days=today.weekday())
-    dates = [(monday + datetime.timedelta(days=i)) for i in range(5)]  # Mon–Fri
+    dates = []
+    for i in range(5): # Mon-Fri
+        d = monday + datetime.timedelta(days=i)
+        if not is_holiday(d):
+            dates.append(d)
+        else:
+            push_log(f"🌴 {d.strftime('%d/%m')} es feriado, saltando registro automático.", "warn")
+
+    if not dates:
+        push_log("🏝 Toda la semana son vacaciones o feriados. Nada que registrar.", "success")
+        return
+
     week_number = str(today.isocalendar()[1])
     
     _run_registration_bg(
         name=name, 
         username=username, 
         password=password, 
-        dates=dates, 
+        dates=dates,
         hours=8, 
         should_export=should_export, 
         week_number=week_number,
         pernr=pernr,
         posid=posid,
-        descr=descr
+        descr=descr,
+        should_send_webhook=True,   # Always deliver webhook on auto weekly run
+        test_email=True,            # Production: send to real recipients
+        source="auto"
     )
 
 
@@ -307,6 +432,64 @@ def download_file(filename):
 def api_status():
     """Return the current registration status."""
     return jsonify({"running": _running_lock.locked()})
+
+
+@app.route("/api/history")
+def api_history():
+    """Return the registration history from the JSON file."""
+    history_file = os.path.join(LOGS_DIR, "history.json")
+    if not os.path.exists(history_file):
+        return jsonify([])
+    try:
+        with open(history_file, "r", encoding="utf-8") as f:
+            history = json.load(f)
+        return jsonify(history)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/templates", methods=["GET", "POST"])
+def api_templates():
+    """Save or load registration templates."""
+    templates_file = os.path.join(LOGS_DIR, "templates.json")
+    if request.method == "POST":
+        try:
+            data = request.get_json()
+            with open(templates_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            return jsonify({"ok": True})
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)}), 500
+    else:
+        if not os.path.exists(templates_file):
+            return jsonify([])
+        try:
+            with open(templates_file, "r", encoding="utf-8") as f:
+                return jsonify(json.load(f))
+        except Exception as e:
+            return jsonify([])
+
+
+def is_holiday(date: datetime.date) -> bool:
+    """Check if a date is a holiday in Peru (simplified list)."""
+    # Simplified list for 2026/General Peru
+    holidays = [
+        (1, 1),   # Año Nuevo
+        (4, 2),   # Jueves Santo
+        (4, 3),   # Viernes Santo
+        (5, 1),   # Día del Trabajo
+        (6, 29),  # San Pedro y San Pablo
+        (7, 28),  # Fiestas Patrias
+        (7, 29),  # Fiestas Patrias
+        (8, 6),   # Batalla de Junín
+        (8, 30),  # Santa Rosa de Lima
+        (10, 8),  # Combate de Angamos
+        (11, 1),  # Todos los Santos
+        (12, 8),  # Inmaculada Concepción
+        (12, 9),  # Batalla de Ayacucho
+        (12, 25), # Navidad
+    ]
+    return (date.month, date.day) in holidays
 
 
 # ── Entry point ────────────────────────────────────────────────────────────

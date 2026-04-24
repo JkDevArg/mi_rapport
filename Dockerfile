@@ -56,8 +56,8 @@ RUN playwright install chromium
 # ── Copy application source ───────────────────────────────────────────────
 COPY app/ /app/
 
-# ── Ensure logs dir exists ────────────────────────────────────────────────
-RUN mkdir -p /app/logs
+# ── Ensure required dirs exist ────────────────────────────────────────────
+RUN mkdir -p /app/logs /app/exports
 
 # ── Environment defaults ──────────────────────────────────────────────────
 ENV PYTHONUNBUFFERED=1

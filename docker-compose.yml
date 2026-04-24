@@ -27,8 +27,12 @@ services:
     volumes:
       # Persist logs on host
       - ./logs:/app/logs
+      # Persist exports on host
+      - ./exports:/app/exports
       # Live-reload credentials without rebuild
       - ./.env:/app/.env:ro
+      # Live-reload app code without rebuild (code lives at /app/ per Dockerfile)
+      - ./app:/app
 
     # Playwright needs large /dev/shm
     shm_size: "512m"

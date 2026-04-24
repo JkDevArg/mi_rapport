@@ -23,9 +23,11 @@ ODATA_URL = f"{BASE_URL}/sap/opu/odata/sap/ZSRV_RAPP_SRV/Z_SAVE_RAP_HSet"
 
 
 
-def _hours_to_sap_duration(hours: int) -> str:
-    """Convert integer hours to SAP duration format: P00DT08H00M00S"""
-    return f"P00DT{hours:02d}H00M00S"
+def _hours_to_sap_duration(hours: float) -> str:
+    """Convert hours (float/int) to SAP duration format: P00DT08H00M00S"""
+    h = int(hours)
+    m = int((hours - h) * 60)
+    return f"P00DT{h:02d}H{m:02d}M00S"
 
 
 class RapportClient:
@@ -54,8 +56,9 @@ class RapportClient:
         self._sap_passport: Optional[str] = None
         self._x_csrf_token: Optional[str] = None
         
-        # Session cache path
-        self.session_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs", f"session_{username}.json")
+        # Session cache path — must match LOGS_DIR which is /app/logs/ in the container
+        logs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+        self.session_file = os.path.join(logs_dir, f"session_{username}.json")
 
     # ──────────────────────────────────────────────
     # Persistence
@@ -201,7 +204,7 @@ class RapportClient:
         self._x_csrf_token = response.headers.get("x-csrf-token")
         logger.info(f"CSRF token obtained: {self._x_csrf_token[:20] if self._x_csrf_token else 'None'}...")
 
-    def register_day(self, date: datetime.date, hours: int = 8, description: str = None, retry: bool = True) -> bool:
+    def register_day(self, date: datetime.date, hours: float = 8, description: str = None, posid: str = None, retry: bool = True) -> bool:
         """
         Register hours for a single day by POSTing to the OData endpoint.
 
@@ -227,7 +230,7 @@ class RapportClient:
                     "Usr": "",
                     "Datai1": date_str,
                     "Pos": "",
-                    "Posid": self.posid,
+                    "Posid": posid or self.posid,
                     "Refint": "",
                     "Subp": "",
                     "Tare": "",
@@ -264,43 +267,62 @@ class RapportClient:
             ],
         }
 
+        # Always refresh the CSRF token before each POST to avoid
+        # SAP invalidating it after the first use.
+        try:
+            self._fetch_csrf_token()
+            logger.info(f"CSRF token refreshed before POST for {date.isoformat()}")
+        except Exception as e:
+            logger.warning(f"Could not refresh CSRF token: {e}")
+
         headers = {
             "accept": "application/json",
+            "accept-language": "es",
             "content-type": "application/json",
             "dataserviceversion": "2.0",
             "maxdataserviceversion": "2.0",
             "x-requested-with": "XMLHttpRequest",
             "x-xhr-logon": 'accept="iframe,strict-window,window"',
             "origin": BASE_URL,
-            "referer": f"{BASE_URL}/sap/bc/ui2/flp/?sap-client=100&sap-language=ES",
+            "referer": f"{BASE_URL}/sap/bc/ui2/flp",
         }
 
         if self._x_csrf_token:
             headers["x-csrf-token"] = self._x_csrf_token
 
-        logger.info(f"POSTing registration for {date.isoformat()}...")
+        logger.info(f"POSTing registration for {date.isoformat()} | posid={posid or self.posid} | hours={hours} | descr={final_descr[:40]}")
 
         try:
+            import json as _json
             response = self._page.request.post(
                 ODATA_URL,
-                data=payload,
+                data=_json.dumps(payload),
                 headers=headers,
             )
 
             status = response.status
-            logger.info(f"Response status: {status}")
+            body = response.text()
+            logger.info(f"Response status: {status} | body[:300]: {body[:300]}")
 
             if status in (200, 201, 204):
+                # SAP can return HTTP 200 with an error payload — validate body
+                body_lower = body.lower()
+                if '"error"' in body_lower or '"message"' in body_lower and '"code"' in body_lower:
+                    logger.error(f"SAP returned HTTP {status} but body contains an error: {body[:400]}")
+                    if retry:
+                        logger.warning("Retrying after SAP body error — refreshing session...")
+                        self.login(force=True)
+                        return self.register_day(date, hours, description, posid, retry=False)
+                    return False
                 logger.info(f"Day {date.isoformat()} registered successfully.")
                 return True
             elif status in (401, 403, 400) and retry:
                 logger.warning(f"Registration failed with {status}. Attempting re-login and retry...")
                 self.login(force=True)
                 # Retry once
-                return self.register_day(date, hours, description, retry=False)
+                return self.register_day(date, hours, description, posid, retry=False)
             else:
-                body = response.text()
-                logger.error(f"Failed to register {date.isoformat()}: {status} — {body[:200]}")
+                logger.error(f"Failed to register {date.isoformat()}: {status} — {body[:400]}")
                 return False
 
         except Exception as exc:
@@ -308,7 +330,7 @@ class RapportClient:
             if retry:
                 logger.warning("Attempting re-login after exception...")
                 self.login(force=True)
-                return self.register_day(date, hours, description, retry=False)
+                return self.register_day(date, hours, description, posid, retry=False)
             return False
 
     def close(self):
